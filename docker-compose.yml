@@ -1,0 +1,23 @@
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: membrain-neo4j
+    ports:
+      - "7474:7474"   # Web 管理界面
+      - "7687:7687"   # Bolt 协议（Python 连接用）
+    environment:
+      NEO4J_AUTH: neo4j/password123
+    volumes:
+      - ./data/neo4j:/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: membrain-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:

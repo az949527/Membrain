@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 项目数据
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# 配置文件
+.env
+
+# IDE
+.idea/
+
+# 测试
+.pytest_cache/
+
+# AutoDL
+ollama-linux-amd64.tar.zst
+ollama-linux-amd64.tgz
+
+# 其他
+token.json
+test.txt
+chat.json
+fastapi_demo.py
