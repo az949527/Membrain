@@ -142,14 +142,17 @@ class ChatService:
 
         redis = getattr(request.app.state, "redis", None)
         if redis and user_query:
-            cached = await semantic_cache.get(redis, user_query, request.app.state.embedder)
-            if cached:
-                logger.info("【缓存命中】直接返回缓存回答")
-                yield f"__conversation_id__:{conv_id}\n"
-                yield cached
-                await cls._save_message(db, conv_id, "assistant", cached)
-                return
-            logger.info("【缓存未命中】继续正常流程")
+            try:
+                cached = await semantic_cache.get(redis, user_query, request.app.state.embedder)
+                if cached:
+                    logger.info("【缓存命中】直接返回缓存回答")
+                    yield f"__conversation_id__:{conv_id}\n"
+                    yield cached
+                    await cls._save_message(db, conv_id, "assistant", cached)
+                    return
+                logger.info("【缓存未命中】继续正常流程")
+            except Exception as e:
+                logger.warning("【缓存查询失败】Redis 不可用，跳过缓存: %s", e)
 
         # ==================== LangGraph 路由检索 ====================
         import time
