@@ -24,16 +24,11 @@ class AgentTracer:
     ) -> AgentTrace | None:
         """记录一次 Agent 路由追踪
 
-        参数:
-            db: 数据库会话
-            question: 用户问题
-            result: LangGraph 路由返回结果（含 selected_sources / rag_context 等）
-            duration_ms: 路由总耗时（毫秒）
-
-        返回:
-            AgentTrace: 创建的追踪记录
+        使用独立会话提交，避免被 SSE 流式响应的事务回滚影响。
         """
         try:
+            from app.core.database import async_session_factory
+
             sources = result.get("selected_sources", [])
 
             # 判断各知识源是否有返回内容
@@ -44,14 +39,24 @@ class AgentTracer:
             }
 
             trace = AgentTrace(
-                question=question[:200],  # 截断长问题
+                question=question[:200],
                 sources_selected=json.dumps(sources, ensure_ascii=False),
                 rounds=result.get("iteration", 0),
                 duration_ms=duration_ms,
                 context_used=json.dumps(context_used, ensure_ascii=False),
             )
-            db.add(trace)
-            await db.flush()
+
+            # 使用独立会话提交，不依赖上游 SSE 的事务
+            async with async_session_factory() as tracer_session:
+                tracer_session.add(trace)
+                await tracer_session.commit()
+
+            logger.info(
+                "【Agent追踪】问题='%s' 源=%s 轮数=%s 耗时=%sms 使用=%s",
+                question[:30], sources, result.get("iteration", 0),
+                duration_ms, context_used,
+            )
+            return trace
 
             logger.info(
                 "【Agent追踪】问题='%s' 源=%s 轮数=%s 耗时=%sms 使用=%s",
