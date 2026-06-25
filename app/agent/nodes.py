@@ -10,10 +10,12 @@ from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.core.logger import logger
+from app.core.prompts import REASONING_SYSTEM_PROMPT
 from app.rag.retriever import RAGRetriever
 from app.graph.graph_retriever import GraphRetriever
 from app.tools.web_search import WebSearchTool
 from app.agent.tools import TOOLS, TOOL_SOURCE_MAP
+from app.core.guardrails import validate_tool_calls, check_empty_result
 
 
 async def reasoning_node(
@@ -42,17 +44,7 @@ async def reasoning_node(
         # 组装message：把历史tool结果传给LLM
         # 让LLM能看到之前调用什么工具，返回什么
         api_messages = [
-            {"role": "system",
-             "content": (
-                 "你是一个智能助手。你可以使用以下工具来获取信息：\n"
-                 "- rag_search: 从本地知识库搜索用户上传的文档内容\n"
-                 "- graph_query: 查询知识图谱中的实体关系\n"
-                 "- web_search: 搜索网络实时信息\n\n"
-                 "根据当前信息和问题，决定下一步：\n"
-                 "1. 如果已有足够信息可以回答 → 选择 __answer__\n"
-                 "2. 如果需要更多信息 → 选择合适的工具"
-                ),
-             },
+            {"role": "system", "content": REASONING_SYSTEM_PROMPT},
             {"role": "user", "content": question},
         ]
         # 把之前tool执行的结果追加进去，让LLM看到上下文
@@ -70,9 +62,13 @@ async def reasoning_node(
         choice_msg = response.choices[0].message
         tool_calls = choice_msg.tool_calls or []
 
-        # 没选工具 → 认为可以回答了
+        # ===新增：第1层 Guardrails检验 ===
+        tool_calls = validate_tool_calls(tool_calls)
+
         if not tool_calls:
-            return {"selected_sources": ["__answer__"]}
+            # 全部非法 → 降级为全源检索
+            logger.info("【Guardrails】所有 tool_calls 均非法，降级为全源检索")
+            return {"selected_sources": ["rag","graph","web"]}
 
         # 映射工具名为知识源
         sources = []

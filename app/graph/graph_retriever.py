@@ -16,6 +16,7 @@ import json
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.logger import logger
+from app.core.prompts import TEXT2CYPHER_PROMPT
 
 
 class GraphRetriever:
@@ -97,20 +98,7 @@ class GraphRetriever:
         返回:
             str: Cypher 查询语句，生成失败返回空字符串
         """
-        prompt = f"""你是一个 Neo4j 图数据库专家。基于以下图结构，将用户问题转为 Cypher 查询语句。
-
-{schema}
-
-要求：
-- 只返回 Cypher 语句，不要任何额外文字
-- 如果问题与图数据无关（不涉及实体关系），返回 "SKIP"
-- 使用中文实体名作为查询条件
-- 如需模糊匹配，使用 CONTAINS 或 STARTS WITH
-
-用户问题：{question}
-
-Cypher：
-"""
+        prompt = TEXT2CYPHER_PROMPT.format(schema=schema, question=question)
         try:
             client = AsyncOpenAI(
                 api_key=settings.LLM_API_KEY,

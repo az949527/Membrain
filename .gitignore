@@ -24,8 +24,15 @@ data/
 ollama-linux-amd64.tar.zst
 ollama-linux-amd64.tgz
 
+# 日志
+*.log
+
+# 评估结果
+eval_results/
+
 # 其他
 token.json
+token.txt
 test.txt
 chat.json
 fastapi_demo.py

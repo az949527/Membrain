@@ -22,7 +22,7 @@
 - 每次都从 DB 加载完整历史而不是依赖客户端传，
   避免客户端篡改历史
 """
-from typing import AsyncGenerator, List, Optional
+from typing import AsyncGenerator, List, Optional, Union
 
 from openai import AsyncOpenAI
 from sqlalchemy import select
@@ -30,9 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logger import logger
+from app.core.prompts import SYSTEM_PROMPT_CHAT
 from app.models.conversation import Conversation
 from app.models.message import Message
-
+from app.services.memory_service import MemoryService
 
 class ChatService:
     """聊天业务逻辑（管理对话和消息持久化，调用 LLM API）"""
@@ -86,10 +87,15 @@ class ChatService:
         conversation_id: Optional[int],
         messages: List[dict],
         request=None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Union[str, dict], None]:
         """流式聊天核心方法
 
-        这是一个异步生成器，逐 token 产出文本。
+        这是一个异步生成器，逐 token 产出文本和结构化事件。
+
+        产出类型：
+        - str: 最终回答的文本 token（向后兼容）
+        - dict: 结构化事件（reasoning / tool_call / tool_result / status）
+
         首条产出是 "__conversation_id__:{id}" 的特殊消息，
         让客户端知道当前的对话 ID（新建对话时特别重要）。
 
@@ -128,9 +134,21 @@ class ChatService:
         logger.info("【第3步】从数据库加载了 %s 条历史消息", len(history))
 
         # 组装给 LLM 的消息列表：system 提示 + 历史对话
+        # 注入记忆
+        memory_text = ""
+        try:
+            memory_service = MemoryService(db)
+            memory_text = await memory_service.get_memory(conv_id)
+        except Exception as e:
+            logger.warning("【记忆注入失败】%s", e)
+
         api_messages = [
-            {"role": "system", "content": "你是一个智能助手，请用中文回答问题。"}
+            {"role": "system", "content": SYSTEM_PROMPT_CHAT}
         ]
+
+        if memory_text:
+            # 记忆插在 system prompt 之后、历史消息之前
+            api_messages.append({"role": "system", "content": f"[记忆]\n{memory_text}"})
         for m in history:
             api_messages.append({"role": m.role, "content": m.content})
         logger.info("【第3步完成】组装了 %s 条消息发给 LLM（含 system 提示）", len(api_messages))
@@ -170,25 +188,67 @@ class ChatService:
                 )
 
             if user_query:
+                # 先发送 conversation_id（让前端在推理事件之前就知道对话 ID）
+                yield f"__conversation_id__:{conv_id}\n"
+
+                yield {"type": "status", "content": "正在分析问题，决定使用哪些知识源..."}
+
                 t0 = time.time()
-                result = await request.app.state.router.ainvoke({
+                from app.agent.tools import TOOL_SOURCE_MAP
+                SOURCE_TO_TOOL = {v: k for k, v in TOOL_SOURCE_MAP.items()}
+                accumulated = {}
+                reasoning_round = 0
+
+                async for event in request.app.state.router.astream({
                     "question": user_query,
                     "rag_context": None,
                     "graph_context": None,
                     "web_context": None,
                     "selected_sources": [],
-                })
+                    "messages": [],
+                    "iteration": 0,
+                }):
+                    # event 结构: {"节点名": {state字段...}}
+                    for node_name, output in event.items():
+                        accumulated.update(output)
+
+                        if node_name == "reasoning":
+                            reasoning_round += 1
+                            sources = output.get("selected_sources", [])
+                            if "__answer__" in sources:
+                                yield {"type": "status", "content": "已获取足够信息，准备生成最终回答"}
+                            elif sources:
+                                readable = [SOURCE_TO_TOOL.get(s, s) for s in sources]
+                                yield {"type": "reasoning",
+                                       "content": f"第{reasoning_round}轮推理: 需要 {', '.join(readable)}"}
+                                for s in sources:
+                                    tool_name = SOURCE_TO_TOOL.get(s, f"{s}_search")
+                                    yield {"type": "tool_call", "tool": tool_name,
+                                           "query": user_query[:50]}
+
+                        elif node_name == "execute_tools":
+                            if output.get("rag_context"):
+                                yield {"type": "tool_result", "source": "rag",
+                                       "summary": "RAG 检索到相关内容"}
+                            if output.get("graph_context"):
+                                yield {"type": "tool_result", "source": "graph",
+                                       "summary": "图谱查询返回关系数据"}
+                            if output.get("web_context"):
+                                yield {"type": "tool_result", "source": "web",
+                                       "summary": "网络搜索到相关内容"}
+
                 duration_ms = int((time.time() - t0) * 1000)
 
-                # 记录 Agent 追踪（异步，不影响主流程）
-                await AgentTracer.record(db, user_query, result, duration_ms)
+                # 记录 Agent 追踪（使用 accumulated 最终状态）
+                await AgentTracer.record(db, user_query, accumulated, duration_ms)
 
-                if result.get("rag_context"):
-                    api_messages.insert(1, {"role": "system", "content": result["rag_context"]})
-                if result.get("graph_context"):
-                    api_messages.insert(2, {"role": "system", "content": result["graph_context"]})
-                if result.get("web_context"):
-                    api_messages.insert(3, {"role": "system", "content": result["web_context"]})
+                # 注入检索结果到 api_messages
+                if accumulated.get("rag_context"):
+                    api_messages.insert(1, {"role": "system", "content": accumulated["rag_context"]})
+                if accumulated.get("graph_context"):
+                    api_messages.insert(2, {"role": "system", "content": accumulated["graph_context"]})
+                if accumulated.get("web_context"):
+                    api_messages.insert(3, {"role": "system", "content": accumulated["web_context"]})
         except Exception as e:
             logger.warning("【LangGraph 路由跳过】%s", e)
 
@@ -197,9 +257,6 @@ class ChatService:
         logger.info("【第4步】开始调用 LLM API (base_url=%s, model=%s)",
                      settings.LLM_BASE_URL, settings.LLM_MODEL)
         full_response = ""
-
-        # 先发送 conversation_id 给客户端
-        yield f"__conversation_id__:{conv_id}\n"
 
         # 初始化 OpenAI 客户端（DeepSeek 兼容 OpenAI 接口）
         client = AsyncOpenAI(
@@ -236,7 +293,26 @@ class ChatService:
         # ==================== 第 5 步：保存完整回复 ====================
         if full_response:
             await cls._save_message(db, conv_id, "assistant", full_response)
-            logger.info("【第5步】已保存 AI 回复到对话 %s（%s 字）", conv_id, len(full_response))
+            # 异步触发记忆提取（不阻塞主流程）
+            try:
+                # 获取当前对话总轮数
+                msg_count = len(messages) + 1  # +1 因为当前回复已保存
+                if msg_count >= 6:  # 至少 6 轮才触发记忆
+                    result = await db.execute(
+                        select(Message)
+                        .where(Message.conversation_id == conv_id)
+                        .order_by(Message.created_at)
+                    )
+                    history = result.scalars().all()
+
+                    memory_service = MemoryService(db)
+                    # 提取事实
+                    await memory_service.extract_facts(conv_id, history)
+                    # 更新摘要
+                    await memory_service.summarize(conv_id, history)
+                    logger.info("【记忆更新】对话 %s 已完成记忆提取", conv_id)
+            except Exception as e:
+                logger.warning("【记忆更新失败】%s", e)  # 记忆失败不影响主流程
 
             # 自动更新对话标题（取第一条用户消息的前 30 个字）
             if conv.title == "新对话" and messages:

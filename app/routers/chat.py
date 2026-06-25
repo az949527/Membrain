@@ -19,7 +19,8 @@
 - 只需要服务端→客户端的单向流，SSE 天然适合
 - 实现简单，不需要升级握手等复杂逻辑
 """
-from typing import List
+import json
+from typing import List, Union
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,6 +101,10 @@ async def _sse_wrap(generator, db: AsyncSession):
     conv_id = None
     sse_count = 0
     async for chunk in generator:
+        # dict → 结构化事件，JSON 序列化后发送
+        if isinstance(chunk, dict):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            continue
         # 拦截特殊消息：对话 ID 通知（不发送给客户端）
         if chunk.startswith("__conversation_id__:"):
             conv_id = chunk.split(":")[1].strip()
@@ -110,7 +115,6 @@ async def _sse_wrap(generator, db: AsyncSession):
         yield f"data: {chunk}\n\n"
 
     # 流结束后发送完成标记
-    import json
     done_data = {"done": True}
     if conv_id:
         done_data["conversation_id"] = int(conv_id)

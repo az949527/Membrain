@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # 【跨项目通用】
     LOG_LEVEL: str = "INFO"
 
+    # ==================== LangSmith 追踪（可选）====================
+    LANGSMITH_TRACING: bool = False
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = "membrain"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

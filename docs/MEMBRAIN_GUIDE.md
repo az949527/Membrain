@@ -43,30 +43,40 @@ membrain/
 │   │   ├── security.py            ← JWT 签发与验证
 │   │   ├── hashing.py             ← bcrypt 密码哈希
 │   │   ├── logger.py              ← 日志配置
-│   │   └── middleware.py          ← 请求日志中间件
+│   │   ├── middleware.py          ← 请求日志中间件
+│   │   ├── prompts.py             ← Stage 8: Prompt 统一管理
+│   │   └── guardrails.py          ← Stage 9: LLM 输出校验
 │   ├── models/                    ← ORM 模型（已建）
 │   │   ├── user.py                ← 用户模型
 │   │   ├── conversation.py        ← 对话模型
 │   │   ├── message.py             ← 消息模型
 │   │   ├── document.py            ← 文档模型
-│   │   └── chunk.py               ← 分块模型
+│   │   ├── chunk.py               ← 分块模型
+│   │   ├── agent_trace.py         ← Stage 10: Agent 追踪
+│   │   └── memory_record.py       ← Stage 9: Agent 记忆
 │   ├── schemas/                   ← Pydantic 模型（已建）
 │   │   ├── auth.py                ← 认证相关
 │   │   ├── chat.py                ← 聊天相关
-│   │   └── document.py            ← 文档相关
+│   │   ├── document.py            ← 文档相关
+│   │   └── trace.py               ← Stage 10: 追踪 API
 │   ├── services/                  ← 业务逻辑（已建）
 │   │   ├── auth.py                ← 注册登录
 │   │   ├── chat.py                ← 聊天 + RAG 集成
-│   │   └── document_service.py    ← 文档管理
+│   │   ├── document_service.py    ← 文档管理
+│   │   ├── memory_service.py      ← Stage 9: Agent 记忆
+│   │   └── agent_tracer.py        ← Stage 10: Agent 追踪
 │   ├── routers/                   ← API 路由（已建）
 │   │   ├── auth.py                ← 认证端点
 │   │   ├── chat.py                ← 聊天端点
-│   │   └── document.py            ← 文档端点
+│   │   ├── document.py            ← 文档端点
+│   │   └── trace.py               ← Stage 10: 追踪端点
 │   ├── rag/                       ← RAG 管线（已建）
 │   │   ├── chunker.py             ← 文本分块
 │   │   ├── embedder.py            ← 向量化
 │   │   ├── vector_store.py        ← FAISS 索引
-│   │   └── retriever.py           ← 检索 + 组装
+│   │   ├── retriever.py           ← 检索 + 组装
+│   │   ├── hyde.py                ← Stage 10: HyDE 查询改写
+│   │   └── reranker.py            ← Stage 10: Reranker 精排
 │   ├── graph/                     ← Neo4j 知识图谱（已建）
 │   ├── tools/                     ← 网络搜索工具（已建）
 │   ├── agent/                     ← LangGraph 智能路由（已建）
@@ -79,19 +89,30 @@ membrain/
 ├── requirements.txt               ← 依赖声明（已建）
 ├── .env.example                   ← 环境变量模板（已建）
 ├── pytest.ini                     ← pytest 配置（asyncio_mode = auto）
-├── tests/                         ← 基础测试（已建）
+├── tests/                         ← 测试与评估（已建）
 │   ├── conftest.py               ← fixtures（db_session/client/auth_token）
 │   ├── test_auth.py              ← 认证测试（7 个）
-│   └── test_chat.py              ← 聊天测试（2 个）
-├── MEMBRAIN_GUIDE.md              ← 本文件（唯一进度源头）
+│   ├── test_chat.py              ← 聊天测试（2 个）
+│   ├── eval_retrieval.py         ← 检索质量评估（59 条查询）
+│   ├── eval_qa.py                ← 端到端 QA 评估（Chat API + SSE 流）
+│   └── generate_report.py        ← 自动生成 REPORT.md
+├── eval_results/                   ← 评估基线数据（已建）
+│   ├── v1/                       ← v1 基线（18 条，Recall@3=77.8%）
+│   └── v2/                       ← v2 基线（59 条，Recall@3=66.1%）
 ├── TROUBLESHOOTING.md             ← 问题排查记录
-├── FUTURE_IMPROVEMENTS.md         ← 待优化清单
-└── qa-records.md                  ← 问答记录
+├── transformer-interview-prep.md  ← Transformer 面试补充
+├── docs/                          ← 面试准备文档集
+│   ├── MEMBRAIN_GUIDE.md          ← 本文件（唯一进度源头）
+│   ├── FUTURE_IMPROVEMENTS.md     ← 待优化清单
+│   ├── qa-records.md              ← 问答记录
+│   ├── agent-interview-prep.md    ← 面试话术全文（Part 1-5）
+│   ├── interview-cards.md         ← 记忆卡片（遮答案自测用）
+│   └── review-plan.md             ← 三周复习计划
 ```
 
 ---
 
-## 六阶段路线图
+## 十二阶段路线图
 
 | Stage | 主题 | 目标 | 状态 |
 |-------|------|------|------|
@@ -100,20 +121,30 @@ membrain/
 | 3 | 知识图谱 (Neo4j) | 概念提取 + 关系图 + Text2Cypher 查询 | ✅ 完成 |
 | 4 | 网络搜索工具 | SerpAPI 搜索 → 上下文注入 | ✅ 完成 |
 | 5 | LangGraph 智能路由 | 统一入口 → 自动分流（直接聊 / RAG / 图谱 / 搜索） | ✅ 完成 |
-| 6 | 缓存 + 企业级收尾 | Redis 语义缓存、Docker Compose 一键启动、基础测试 | 📋 进行中（Step 1/2/4 完成，Step 3 待 Docker） |
+| 6 | 缓存 + Docker Compose + 基础测试 | Redis 语义缓存、Docker Compose 一键启动、基础测试 | ✅ 完成 |
+| 7 | RAG 评估体系 | 检索质量评估 + 端到端 QA 评估 + 基线数据 | ✅ 完成 |
+| 8 | 项目基础设施规范化 | Prompt 统一管理 + .gitignore + 部署文档 | ✅ 完成 |
+| 9 | Agent 健壮性 | Guardrails / LLM 输出校验 + Agent Memory 机制 | ✅ 完成 |
+| 10 | RAG 深度优化 | Reranker 精排 + HyDE 改写 + 评估数据集扩充 | ✅ 完成 |
+| 11 | 可观测性与交互体验 | 中间推理流式输出 + LangSmith 集成 | ✅ 完成 |
+| 12 | 高阶面试亮点 | MCP / 多Agent / 上下文工程 / 记忆机制 / System Design 话术 | ✅ 完成 |
 
 ---
 
 ## 当前进度
 
-- **当前阶段**：Stage 6 — 缓存 + 企业级收尾 ✅
-  - Step 1（Redis 配置）✅
-  - Step 2（语义缓存核心）✅
-  - Step 3（Docker Compose 整合）✅ — Neo4j + Redis 通过 `docker compose up -d` 启动并验证成功
-  - Step 4（基础测试）✅ — 9/9 passed
-- **所有阶段**：Stage 1-6 全部完成 ✅
-- **后续**：AutoDL 部署 ✅（已部署至 AutoDL 实例，API 运行正常）
-  - 详见下方 "部署到 AutoDL" 章节
+- **已完成的 Stage**：Stage 1-12 全部完成 ✅
+  - Stage 1-6：基础功能建设 ✅（认证/RAG/图谱/搜索/LangGraph/缓存）
+  - Stage 7：评估体系构建 ✅（检索评估 + QA 评估 + v1 基线）
+  - Stage 8：项目基础设施规范化 ✅
+  - Stage 9：Agent 健壮性 ✅
+  - Stage 10：RAG 深度优化 ✅（Reranker + HyDE + 评估数据集 18→59 条）
+  - Stage 11：可观测性与交互体验 ✅（中间推理流式输出 + LangSmith 配置）
+  - Stage 12：面试概念话术专项 ✅（Part 4: MCP/多Agent/上下文/记忆 + Part 5: System Design 6 维度）
+- **面试准备**：Function Calling / ReAct / AgentTracer 已完成 ✅
+  - 评估基线 v2（已跑）：59 条评估集，Recall@3=72.9%（Reranker 模型因网络未加载，部署后重跑）
+  - 面试话术：agent-interview-prep.md 全文涵盖 Part 1-5，共约 1200 行 ✅
+- **AutoDL 部署**：上次部署到 seetacloud 实例，实例可能已销毁，需要重新部署
 
 ---
 
@@ -598,7 +629,7 @@ LangGraph 智能路由（Stage 5）：
 
 ---
 
-## Stage 6：缓存 + 企业级收尾 📋（进行中）
+## Stage 6：缓存 + Docker Compose + 基础测试 ✅
 
 ### 目标
 Redis 语义缓存、Docker Compose 一键启动、基础测试。
@@ -648,6 +679,374 @@ Redis 语义缓存、Docker Compose 一键启动、基础测试。
 | 4 | 基础测试 | ✅ | 9/9 passed |
 
 ---
+
+## Stage 7：RAG 评估体系 ✅
+
+### 目标
+建立 RAG 质量评估体系，量化检索和 QA 效果，产出可对比的基线数据。
+
+### 说明
+Stage 7 不修改应用代码，而是增加评估脚本和测试文档，对已有的 RAG 管线做量化评估。
+
+### 评估文件
+
+| 文件 | 类型 | 用途 |
+|------|------|------|
+| `tests/eval_retrieval.py` | 检索评估 | 直接调 RAGRetriever 组件，18 条查询测 Recall@3 / MRR / Top-1 |
+| `tests/eval_qa.py` | QA 评估 | 通过 httpx 调 Chat API（SSE 流），18 条查询测 Keyword Rate |
+| `data/eval_doc.txt` | 测试文档 | 覆盖全部查询知识点的 MemBrain 项目介绍 |
+| `eval_results/REPORT.md` | 基线报告 | v1 基线综合分析 |
+
+### 评估数据流
+
+```
+                        data/eval_doc.txt（测试文档）
+                               │
+                   上传到 API → FAISS 索引
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+    eval_retrieval.py   eval_qa.py        聊天记录追踪
+    （调 RAGRetriever） （调 Chat API）    （AgentTracer）
+              │                │
+              ▼                ▼
+    eval_results.json    eval_results_qa.json
+              │                │
+              └──────┬─────────┘
+                     ▼
+              eval_results/REPORT.md
+```
+
+### v1 基线结果（2026-06-12）
+
+| 评估类型 | 指标 | 值 |
+|----------|------|-----|
+| 检索评估 | Recall@3 | 77.8% (14/18) |
+| 检索评估 | Top-1 | 61.1% (11/18) |
+| 检索评估 | MRR | 0.9583 |
+| QA 评估 | Keyword Rate | 83.3% (15/18) |
+| QA 评估 | 平均耗时 | 58.1s/条 |
+
+### 关键发现
+
+1. **检索不是瓶颈** — 语义相似和跨段综合场景检索命中率 100%，embedding + FAISS 管线工作正常
+2. **LLM 覆盖 RAG 上下文** — 精确匹配失败是因为 LLM 不信任 RAG，用自己的知识覆盖文档内容（"512" vs "500"）
+3. **top_k=3 不足** — 部分精确查询的 chunk 在 top-3 之外
+4. **阈值 0.3 偏低** — 无关查询（"讲个笑话"）的 chunk 相似度 0.346 误召回
+
+### 后续优化（按优先级）
+
+| 优先级 | 优化项 | 说明 |
+|--------|--------|------|
+| 🔴 高 | 提高 system prompt 让 LLM 更信任 RAG | 解决 LLM 覆盖问题 |
+| 🔴 高 | 阈值 0.3 → 0.4 | 减少误召回 |
+| 🟡 中 | top_k 3→5 | 提高精确匹配 Recall |
+| 🟢 低 | LLM-as-judge 追加打分 | 替代 0/1 keyword match |
+
+### 进度总结
+
+| Step | 内容 | 状态 | 备注 |
+|------|------|------|------|
+| 1 | Redis 配置 | ✅ | config.py + docker-compose.yml |
+| 2 | 语义缓存 | ✅ | 3 函数 + chat.py 集成 |
+| 3 | Docker Compose | ✅ | 已通过 docker-compose 启动 Neo4j + Redis |
+| 4 | 基础测试 | ✅ | 9/9 passed |
+
+---
+
+## Stage 8：项目基础设施规范化 🔄
+
+### 之前状态
+- prompt 散落在 4 个文件（chat.py、nodes.py、entity_extractor.py、graph_retriever.py），改一处容易漏另一处
+- 根目录没有 `.gitignore`，数据库文件和缓存出现在 git status 中
+- 没有部署步骤文档，AutoDL 上线需要重新摸索
+
+### 为什么要做
+面试官看你的 GitHub 项目，第一印象就是项目根目录干不干净。没有 `.gitignore`、prompt 到处写死，会让人觉得"工程习惯不够好"。这一步不涉及复杂算法，纯粹是工程规范化，为后续所有增强打地基。
+
+### 依赖关系
+这一步是 Layer 0，后面 Stages 9-12 的所有 prompt 改动都要基于 prompts.py 统一管理，所以必须先做。
+
+### Step 1: Prompt 统一管理（1h）
+
+**做什么**：
+1. 新建 `app/core/prompts.py`，收集所有 prompt 按 3 层结构组织
+2. 各文件统一 import，不再写字符串常量
+
+**3 层结构**：
+```python
+# ========== 第 1 层：角色定义 ==========
+SYSTEM_PROMPT_CHAT = "你是一个智能助手，请用中文回答问题..."
+
+# ========== 第 2 层：能力边界 ==========
+REASONING_SYSTEM_PROMPT = """你有以下工具可用：
+- rag_search: 从本地知识库搜索用户上传的文档...
+- graph_query: 查询知识图谱中的实体关系...
+- web_search: 搜索互联网获取实时信息..."""
+
+# ========== 第 3 层：行为约束 ==========
+TEXT2CYPHER_PROMPT = """根据图数据库 schema 将用户问题转为 Cypher 查询...
+必须以 MATCH 或 CALL 开头，只读不写"""
+```
+
+**涉及文件**：
+- `app/core/prompts.py`（新建）
+- `app/agent/nodes.py`（改 import）
+- `app/services/chat.py`（改 import）
+- `app/graph/entity_extractor.py`（改 import）
+- `app/graph/graph_retriever.py`（改 import）
+
+### Step 2: .gitignore + 部署文档（1h）
+
+**做什么**：
+1. 创建 `.gitignore`
+2. `.env.example` 补充 HOST/PORT/LOG_DIR
+3. 写 `DEPLOY.md`
+
+**.gitignore**：data/、.env、*.db、__pycache__、*.pyc、.venv/
+**DEPLOY.md**：AutoDL 部署步骤（创建实例→拉代码→装依赖→配 env→启动→端口映射）
+
+**涉及文件**：
+- `.gitignore`（新建）
+- `.env.example`（更新）
+- `DEPLOY.md`（新建）
+
+### 验收标准
+- 所有 prompt 集中在 `app/core/prompts.py`，原文件的 prompt 全部替换为 import
+- `git status` 不再显示 .db / __pycache__ 等文件
+- 按 DEPLOY.md 能在 AutoDL 上一键部署
+
+---
+
+## Stage 9：Agent 健壮性（面试必考）✅
+
+### 之前状态
+- LLM 返回的 tool_calls 无校验，非法工具名或参数错误直接崩溃
+- Agent 无长期记忆，每轮对话从零开始，无法记住用户偏好
+- 面试问"怎么保证 Agent 输出的安全性"答不出来
+
+### 为什么要做
+Agent 安全性和记忆是面试最高频考点。Guardrails 展示工程经验（LLM 输出不可信，必须校验），Memory 展示对 Agent 能力的深度理解（记忆分三类：情景/语义/程序）。两个都做了，面试官会觉得你是真正写过生产级 Agent 的。
+
+### 依赖关系
+依赖 Stage 8（prompts.py 已建好，memory 和 guardrails 的 prompt 直接加进去）
+
+### Step 1: Guardrails / LLM 输出校验（2-3h）
+
+**设计思路**：三层校验层层递进
+```
+LLM 返回 tool_calls
+    │
+第 1 层：validate_tool_calls()
+  ├─ name 在 TOOLS 列表里？
+  ├─ parameters 能 json.loads？
+  └─ 全非法 → 降级全源
+
+    │
+第 2 层：执行结果校验
+  ├─ Text2Cypher 结果为空？→ 跳过
+  └─ RAG 相似度 < 阈值？→ 过滤
+
+    │
+第 3 层：系统兜底（已有）
+  └─ 全炸 → 纯 LLM 聊天
+```
+
+**做什么**：
+1. 新建 `app/core/guardrails.py`：validate_tool_calls + cypher_safety_check
+2. `nodes.py`：reasoning_node 收到 tool_calls 先校验再执行
+3. `graph_retriever.py`：Cypher 增加结果非空检查
+
+**验收标准**：故意传非法参数时，Agent 不崩溃，降级为全源检索
+
+### Step 2: Agent Memory 机制（半天~1天）
+
+**面试话术：记忆三层分类**
+
+面试官问"你的 Agent 怎么处理长期记忆？"，按三层分类回答是最清晰的结构：
+
+| 记忆类型 | 含义 | 当前状态 | 面试话术 |
+|----------|------|----------|----------|
+| **情景记忆** (Episodic) | 对话历史——谁在什么时候说了什么 | ✅ 已有（DB 加载 messages 到上下文） | "最基础的记忆，让 Agent 知道刚才聊了什么" |
+| **语义记忆** (Semantic) | 事实知识——用户提到的实体、偏好、关键信息 | ⏳ **本 Step 实现** extract_facts() | "核心价值，多轮对话中记住用户提到的具体信息" |
+| **程序记忆** (Procedural) | 用户习惯/偏好模式——"他喜欢详细回答""他上次选了 Python" | 🔮 可扩展（基于 fact 的统计分析） | "亮点，体现对记忆的深度理解，说明可以在 fact 积累足够后做模式识别" |
+
+**回答框架**：先说出三层分类 → 指出当前实现了情景+语义 → 说明程序记忆可以作为后续扩展 → 面试官会觉得你有完整的技术视野。
+
+**设计思路**：
+```python
+# SQLite 建 memory_records 表
+class MemoryRecord(Base):
+    __tablename__ = "memory_records"
+    conversation_id = Column(Integer, ForeignKey("conversations.id"))
+    memory_type = Column(String(20))   # "summary" | "fact"
+    content = Column(Text)
+    created_at = Column(DateTime)
+```
+
+**MemoryService 三个方法**：
+- `extract_facts(conversation_id, messages)` → LLM 提取实体/偏好，存为 fact（语义记忆）
+- `summarize(conversation_id, messages)` → LLM 总结对话，存为 summary（情景记忆的压缩）
+- `get_memory(conversation_id)` → 查当前对话记忆，格式化为文本
+
+**数据流**：
+```
+用户消息 → 保存 → 调 LLM → 保存回复
+                            ↓
+                    轮数 ≥ 6？
+                    ├─ 是 → extract_facts() + summarize()
+                    └─ 否 → 跳过
+
+下一轮：api_messages = [system, MEMORY, RAG, 图谱, 历史...]
+```
+
+**验收标准**：多轮对话后，新问题能引用之前提到的实体/偏好（如"我刚才说我喜欢什么？"→"你说过喜欢 Python"）
+
+---
+
+## Stage 10：RAG 深度优化（拉开差距）
+
+### 之前状态
+- FAISS 粗排直接取 top_k=3 送 LLM，无精排环节
+- 评估数据集仅 18 条，说服力不足
+- v1 基线 Recall@3=77.8%，有提升空间
+
+### 为什么要做
+RAG 优化是常考话题。写了 RAG 的项目很多，能说出 Reranker（cross-encoder 精排）+ HyDE（假设回答改写）的，说明深入思考过检索质量。评估数据扩到 50+ 条，面试时底气更足。
+
+### 依赖关系
+独立。Reranker/HyDE 是 retriever.py 的内部增强，不依赖其他 Stage。
+
+### Step 1: Reranker 精排 + HyDE Query 改写（半天）
+
+**Reranker 流程**：
+```
+用户问题 → FAISS 粗排 top_k=10
+         → CrossEncoder 计算 relevance score
+         → 按 score 降序取 top_n=3
+         → 送入 LLM
+```
+
+**HyDE 流程**：
+```
+用户问题 → LLM 生成"假设回答"
+         → 假设回答向量化
+         → 用该向量去 FAISS 检索
+         → 返回结果
+```
+
+**做什么**：
+1. `app/rag/reranker.py`：封装 CrossEncoder rerank 方法
+2. `app/rag/hyde.py`：HyDE prompt → 生成假设回答 → 向量检索
+3. `retriever.py`：集成 reranker 替换末尾排序
+
+### Step 2: 评估数据集扩充（2h）
+
+**做什么**：
+1. EVAL_SET 18 条 → 59 条，覆盖 9 个场景：
+   - 精确匹配 8 / 语义相似 10 / 跨段综合 10
+   - Agent 系统 6 / Guardrails 4 / 记忆系统 5
+   - 知识图谱 4 / API 与部署 4 / 边界无关 8
+2. 按场景分组输出统计（已有分组逻辑，自动适配新场景）
+3. 新查询覆盖 Stage 8-10 新增功能（Guardrails、记忆、Reranker、HyDE）
+
+**验收标准**：评估脚本跑通，新查询命中率可追踪
+
+---
+
+## Stage 11：可观测性与交互体验（展示效果）✅
+
+### 之前状态
+- Agent 是黑盒，用户只看到最终回答，看不到思考过程
+- 每次路由决策、工具调用、检索耗时缺乏可视化
+- 演示时不够"惊艳"
+
+### 为什么要做
+Cline / Cursor 都在展示 Agent 的"思考过程"。面试时你打开 curl 或前端，能看到 Agent 一步步思考（"用户问的是技术问题，需要查 RAG"→"调用了 rag_search 工具"→"检索到 3 条结果"→"最终回答"），面试官会觉得"这 agent 有灵魂"。LangSmith trace 图也能拉出来展示。
+
+### 依赖关系
+流式输出依赖 Stage 8（prompts.py）和 Stage 9（guardrails 校验后的 tool_calls 更可靠）
+
+### Step 1: 中间推理流式输出（已完成）
+
+**SSE 格式变化**：
+```
+旧：data: <纯文本token>\n\n
+    data: {"done": true}\n\n
+
+新：data: {"type":"status","content":"正在分析问题..."}\n\n
+    data: {"type":"reasoning","content":"第1轮推理: 需要 rag, web"}\n\n
+    data: {"type":"tool_call","tool":"rag_search","query":"..."}\n\n
+    data: {"type":"tool_result","source":"rag","summary":"RAG 检索到相关内容"}\n\n
+    data: 最终回答的token...\n\n     ← 最终回答仍保持纯文本（向后兼容）
+    data: {"done":true,"conversation_id":1}\n\n
+```
+
+**技术实现**：
+- `chat.py`：`router.ainvoke()` → `router.astream()`，逐轮 yield 结构化 dict 事件
+- 用 `accumulated.update(output)` 累加每轮 state，最终用 `accumulated` 注入 api_messages
+- `routers/chat.py`：`_sse_wrap` 增加 `isinstance(chunk, dict)` 判断，dict 走 JSON 序列化
+
+**一次请求的完整 SSE 流**：
+```
+[__conversation_id__:1]              ← _sse_wrap 拦截，不发给前端
+{"type":"status","content":"正在分析问题..."}
+{"type":"reasoning","content":"第1轮推理: 需要 rag, web"}
+{"type":"tool_call","tool":"rag_search","query":"..."}
+{"type":"tool_call","tool":"web_search","query":"..."}
+{"type":"tool_result","source":"rag","summary":"RAG 检索到相关内容"}
+{"type":"tool_result","source":"web","summary":"网络搜索到相关内容"}
+{"type":"status","content":"已获取足够信息，准备生成最终回答"}
+最终回答的token...                    ← 纯文本，向后兼容
+{"done":true,"conversation_id":1}
+```
+
+### Step 2: LangSmith 集成（配置已完成）
+
+**改动**：
+- `config.py`：新增 `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` 三行配置
+
+LangGraph 原生支持 LangSmith — .env 里加上 `LANGSMITH_TRACING=true` + 有效 API Key，astream 自动上报 traces，不需要改代码。
+
+### 涉及文件
+| 文件 | 改动 |
+|------|------|
+| `app/services/chat.py` | ainvoke → astream，逐轮 yield 结构化事件 |
+| `app/routers/chat.py` | _sse_wrap 适配 dict 类型事件 |
+| `app/core/config.py` | 加 LangSmith 配置项 |
+
+---
+
+## Stage 12：高阶面试亮点（差异化）✅
+
+### 之前状态
+- 高阶概念（MCP / 多Agent / System Design）未涉及
+- 面试 25k+ 岗位时竞争力不足
+- 项目功能完整但缺乏"拔高"亮点
+
+### 为什么要做
+当面试官问完基础问题后，你能主动聊"MCP 是 Agent 界的 USB-C 协议"、"如果用多 Agent 我会用 Supervisor + Worker 模式"、"上下文工程的分层压缩策略"——面试官会觉得你不只会写代码，还有架构视野。
+
+### 实际交付（agent-interview-prep.md）
+
+| 模块 | 内容 | 行数 | 格式 |
+|------|------|------|------|
+| Part 4.1 MCP 协议 | 核心概念 + 追问应对 + 话术模板 | ~80 | 场景题→核心理解→追问→话术 |
+| Part 4.2 多 Agent 协作 | 3 种模式 + MemBrain 为什么单 Agent + 追问 | ~80 | 同上 |
+| Part 4.3 上下文工程 | 4 大策略 + Token 预算 + 分层压缩 | ~80 | 同上 |
+| Part 4.4 记忆机制 | 三层记忆模型 + memory_service 详解 | ~80 | 同上 |
+| Part 5 概述 | 投入产出比表 + 6 维度一览表 | ~30 | 框架 |
+| Part 5.2 缓存策略 | 三级缓存 + 一致性 + 雪崩/穿透/击穿 | ~70 | 同上 |
+| Part 5.3 限流 | 三层限流 + 算法对比 + 429 处理 | ~60 | 同上 |
+| Part 5.4 降级策略 | 四层降级详解 + 熔断器 + 回退链 | ~70 | 同上 |
+| Part 5.5 横向扩展 | 三步路径（SQLite→MySQL→微服务→无状态） | ~70 | 同上 |
+| Part 5.6 数据库选型 | 对比表 + ORM 优势 + 迁移路径 | ~50 | 同上 |
+| Part 5.7 安全与认证 | 双 token + API Key 管理 + 审计 | ~50 | 同上 |
+| Part 5.8 附录 | 每维度 3 句话速记卡 | ~30 | 速记 |
+
+全文约 400 行新增，agent-interview-prep.md 总行数约 1200 行。
+
+
 
 ## 部署到 AutoDL
 
@@ -745,16 +1144,18 @@ git pull
 
 ---
 
-## 面试准备阶段（当前）
+## 面试准备阶段
 
 ### 目标
-以面试 Agent 开发岗位为目标，深化项目核心能力。Stage 1-6 已完成封闭，以下步骤在此基础上增强。
+以面试 Agent 开发岗位为目标，深化项目核心能力。Stage 1-7 已完成，以下步骤在此基础上增强。
 
 | Step | 主题 | 目标 | 状态 |
 |------|------|------|------|
 | 1 | Function Calling / Tool Calling | 替换 classify prompt 路由为 LLM 自主工具调用 | ✅ 完成 |
-| 2 | ReAct 循环 | 实现思考→行动→观察的多轮推理 | ✅ 已完成 |
-| 3 | 评估 & 可观测性 | Agent 行为追踪 + 追踪记录 API | ✅ 已完成 |
+| 2 | ReAct 循环 | 实现思考→行动→观察的多轮推理 | ✅ 完成 |
+| 3 | 评估 & 可观测性 | Agent 行为追踪 + RAG 检索 + QA 评估 | ✅ 完成 |
+| 4 | 概念话术 + Demo 上线 | MCP/多Agent/System Design 话术 + AutoDL 重新部署 | ✅ 完成 |
+| 5 | Mock 面试演练 | STAR 话术打磨 + 录音练习 | ⏳ 待做 |
 
 ---
 

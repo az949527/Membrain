@@ -63,5 +63,5 @@ async def init_db():
         from app.models.message import Message  # noqa: F401
         from app.models.document import Document  # noqa: F401
         from app.models.chunk import Chunk  # noqa: F401
-
+        from app.models.memory_record import MemoryRecord   # noqa: F401
         await conn.run_sync(Base.metadata.create_all)

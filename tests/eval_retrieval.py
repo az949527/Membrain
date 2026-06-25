@@ -14,6 +14,7 @@
 
 import asyncio
 import json
+import os
 
 from app.core.config import settings
 from app.core.database import async_session_factory
@@ -190,7 +191,7 @@ async def evaluate():
     print("-" * 70)
     for r in results:
         short_q = r["query"][:28]
-        match_str = "✅" if r["matched"] else "❌"
+        match_str = "[OK]" if r["matched"] else "[NO]"
         rank_str = str(r["rank"]) if r["rank"] is not None else "-"
         print(f"{short_q:<30} {r['topic']:<10} {match_str:>4} {rank_str:>4} {r['top_score']:>6.3f} {r['n_results']:>4}")
 
@@ -208,7 +209,7 @@ async def evaluate():
     top1_rate = top1_hits / total
 
     print(f"\n{'=' * 60}")
-    print(f"  📊 汇总统计")
+    print(f"  汇总统计")
     print(f"{'=' * 60}")
     print(f"  总查询数:      {total}")
     print(f"  命中数:        {hits}")
@@ -243,6 +244,7 @@ if __name__ == "__main__":
         ),
         "details": results,
     }
-    with open("eval_results.json", "w", encoding="utf-8") as f:
+    os.makedirs("eval_results/v2", exist_ok=True)
+    with open("eval_results/v2/eval_results.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
-    print("\n详细结果已保存到 eval_results.json")
+    print("\n详细结果已保存到 eval_results/v2/eval_results.json")

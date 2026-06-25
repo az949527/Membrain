@@ -17,6 +17,7 @@ import re
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.logger import logger
+from app.core.prompts import ENTITY_EXTRACT_PROMPT
 
 
 class EntityExtractor:
@@ -42,19 +43,7 @@ class EntityExtractor:
         max_chars = 8000
         truncated = text[:max_chars]
 
-        prompt = f"""从以下文本中提取实体关系三元组 (实体, 关系, 实体)。
-
-要求：
-- 实体必须是具体的人名、地名、组织名、概念、技术名、产品名等
-- 关系必须简洁明确（如"任职于"、"开发了"、"属于"、"位于"）
-- 每个三元组单独一条，不要合并
-- 只返回 JSON 数组，不要任何额外文字和 markdown 格式
-
-文本：
-{truncated}
-
-返回格式：
-[{{"subject": "实体1", "relation": "关系", "object": "实体2"}}]"""
+        prompt = ENTITY_EXTRACT_PROMPT.format(text=truncated)
 
         try:
             client = AsyncOpenAI(
