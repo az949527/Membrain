@@ -20,6 +20,7 @@ import os
 import queue
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Generator
 
@@ -79,20 +80,31 @@ def api_delete(path: str) -> httpx.Response:
 
 # ── SSE 流式工具 ──────────────────────────────────────────────────────────
 
+@dataclass
+class ChatResult:
+    """流式聊天结果"""
+    text: str
+    tool_events: list[dict]
+    conversation_id: int | None = None
+
+
 def stream_chat(
     messages: list[dict],
     conversation_id: int | None,
-) -> Generator[str, None, dict | None]:
-    """异步消费 SSE 流，同步 yield 文本 token；返回时附带 done 元信息。
+    token: str,
+) -> Generator[str, None, ChatResult]:
+    """异步消费 SSE 流，同步 yield 文本 token；结束后通过 StopIteration.value 返回 ChatResult。
 
     通过 threading + queue 桥接 async httpx → sync generator。
+    token 参数在调用线程传入，避免后台线程访问 st.session_state。
     """
     token_queue: queue.Queue = queue.Queue()
-    done_info: dict = {}
     tool_events: list[dict] = []
+    done_conv_id: int | None = conversation_id
+    headers = {"Authorization": f"Bearer {token}"}
 
     async def _fetch():
-        nonlocal done_info
+        nonlocal done_conv_id
         timeout = httpx.Timeout(120.0, connect=30.0, read=120.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:
@@ -103,24 +115,28 @@ def stream_chat(
                         "messages": messages,
                         "conversation_id": conversation_id,
                     },
-                    headers=_auth_headers(),
+                    headers=headers,
                 ) as resp:
+                    if resp.status_code != 200:
+                        error_body = await resp.aread()
+                        token_queue.put(
+                            f"\n\n[服务器错误 {resp.status_code}: {error_body.decode()[:200]}]"
+                        )
+                        return
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):
                             continue
-                        payload = line[6:]  # strip "data: "
-                        # 尝试解析 JSON 事件
+                        payload = line[6:]
                         try:
                             data = json.loads(payload)
                             if data.get("done"):
-                                done_info = data
+                                done_conv_id = data.get("conversation_id", conversation_id)
                                 break
                             elif "type" in data:
                                 tool_events.append(data)
                                 continue
                         except json.JSONDecodeError:
                             pass
-                        # 纯文本 token
                         token_queue.put(payload)
             except Exception as exc:
                 token_queue.put(f"\n\n[连接错误: {exc}]")
@@ -130,15 +146,20 @@ def stream_chat(
     thread = threading.Thread(target=asyncio.run, args=(_fetch(),), daemon=True)
     thread.start()
 
+    text_parts: list[str] = []
     while True:
         token = token_queue.get()
         if token is None:
             break
+        text_parts.append(token)
         yield token
 
     thread.join()
-    st.session_state.last_tool_events = tool_events
-    return done_info
+    return ChatResult(
+        text="".join(text_parts),
+        tool_events=tool_events,
+        conversation_id=done_conv_id if done_conv_id != conversation_id else None,
+    )
 
 
 # ── 页面组件 ──────────────────────────────────────────────────────────────
@@ -310,27 +331,25 @@ def _handle_user_message(prompt: str, conv_id: int | None):
     with st.chat_message("assistant"):
         placeholder = st.empty()
         collected = ""
+        chat_result = None
 
         try:
-            gen = stream_chat(api_messages, conv_id)
-            done_info = None
-            for text_token in gen:
-                collected += text_token
-                placeholder.markdown(collected + "▌")
-
-            # generator 返回的 done_info 在 throw/close 时获取
+            gen = stream_chat(api_messages, conv_id, st.session_state.token)
+            # 手动迭代以捕获 generator return value
             try:
-                gen.throw(StopIteration)
+                while True:
+                    text_token = next(gen)
+                    collected += text_token
+                    placeholder.markdown(collected + "▌")
             except StopIteration as e:
-                done_info = e.value if hasattr(e, "value") else None
-            except Exception:
-                pass
+                chat_result = e.value  # ChatResult(text, tool_events, conversation_id)
 
             placeholder.markdown(collected)
 
             # 更新 conversation_id
-            if done_info and done_info.get("conversation_id"):
-                st.session_state.active_conv_id = done_info["conversation_id"]
+            if chat_result and chat_result.conversation_id:
+                st.session_state.active_conv_id = chat_result.conversation_id
+                st.session_state.last_tool_events = chat_result.tool_events
                 _load_conversations()
 
         except Exception as e:
@@ -342,7 +361,8 @@ def _handle_user_message(prompt: str, conv_id: int | None):
         )
 
         # 展示工具调用
-        show_tool_events()
+        if chat_result and chat_result.tool_events:
+            show_tool_events()
 
         st.rerun()
 
